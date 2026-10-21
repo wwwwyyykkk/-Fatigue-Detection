@@ -40,7 +40,7 @@ flowchart LR
 
 ```text
 图像采集 → 灰度/归一化 → 端侧推理 → EAR / MAR / 人脸置信度
-        → PERCLOS + 打哈欠 + 五状态机 → OLED / 蜂鸣器
+        → PERCLOS + 打哈欠 + 五状态机 → OLED（蜂鸣器可选）
         → 4G JSON 上报 → Web 看板
 ```
 
