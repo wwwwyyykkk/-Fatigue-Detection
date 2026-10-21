@@ -1,12 +1,20 @@
-# Build outputs
+# ESP-IDF build outputs
 build/
-host_test/build/
+build_clean/
+managed_components/
+sdkconfig
+sdkconfig.old
 *.o
 *.obj
+*.d
 *.elf
-*.bin
-*.hex
 *.map
+*.hex
+
+# Python / Node
+__pycache__/
+*.pyc
+node_modules/
 
 # IDE / editor
 .vscode/
@@ -16,12 +24,18 @@ host_test/build/
 Thumbs.db
 .DS_Store
 
-# Documents and large binaries
+# Local documents and archives
 *.docx
 *.pdf
 *.epro
 *.zip
 *.rar
 
-# Unrelated lab notes kept locally, not part of this project
+# Unrelated local lab notes
 Linux实验三.md
+
+# Local datasets / captured logs (keep scripts, not data)
+output/
+Dataset/
+tools/dump*.txt
+tools/*.log

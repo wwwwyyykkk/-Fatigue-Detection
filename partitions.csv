@@ -1,0 +1,7 @@
+# Name,   Type, SubType, Offset,  Size,      Flags
+# Note: factory = 9MB for FLOAT32 model + ESP-SR (was 5000K)
+# model = SPIFFS partition for ESP-SR models (WakeNet/MultiNet)
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        9216K,
+model,    data, spiffs,  ,        0x300000,

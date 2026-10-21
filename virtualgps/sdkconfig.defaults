@@ -1,0 +1,79 @@
+# ESP-IDF 默认配置 — VirtualGPS Board + ESP RainMaker
+
+# 目标芯片
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+# WiFi（RainMaker 配网 + ESP-NOW）
+CONFIG_ESP_WIFI_ENABLED=y
+
+# 蓝牙（RainMaker BLE 配网）
+CONFIG_BT_ENABLED=y
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# 禁用以太网
+CONFIG_ETH_ENABLED=n
+
+# 串口日志级别
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+# UART 控制台配置
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# FreeRTOS
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3120
+
+# 看门狗
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_ESP_INT_WDT=n
+
+# 组件管理器
+CONFIG_DEPENDENCIES_LOCK_ENABLED=n
+
+# ── RainMaker 配置 ──────────────────────────────
+# mbedtls 动态缓冲（TLS 连接所需）
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_PEER_CERT=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
+
+# RainMaker 本地控制安全 (关掉省内存，云端控制走 MQTT 就够了)
+# CONFIG_ESP_RMAKER_LOCAL_CTRL_AUTO_ENABLE is not set
+# CONFIG_ESP_RMAKER_LOCAL_CTRL_SECURITY_2 is not set
+
+# RainMaker 控制台参数命令
+CONFIG_ESP_RMAKER_CONSOLE_PARAM_CMDS_ENABLE=y
+
+# 出厂重置用户ID检查
+CONFIG_ESP_RMAKER_USER_ID_CHECK=y
+CONFIG_ESP_RMAKER_FACTORY_PARTITION_NAME="fctry"
+
+# OTA 回滚
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# ESP Insights (先关掉省内存)
+# CONFIG_ESP_INSIGHTS_TRANSPORT_MQTT is not set
+
+# 自定义分区表 (8MB Flash, factory 3MB + 2 OTA)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_8mb_rainmaker.csv"
+
+# ── PSRAM (2026-08-03: 为 ESP-SR 语音识别模型准备) ──
+# 先按 Octal 试（跟主板一致）。若 boot 报 PSRAM 错误，可能是 Quad(N8R2)，改 MODE_QUAD。
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# ── ESP-SR 语音识别 (2026-08-08, 唤醒词"嗨ESP" + 命令词 mn7_cn 支持自定义) ──
+CONFIG_SR_WN_WN9_HIESP=y
+CONFIG_SR_MN_CN_MULTINET7_QUANT=y
+# ⚠️ 自定义命令必须用拼音(esp_sr_task.cpp add_custom_commands),和 fst/commands_cn.txt 默认命令格式一致!
+# mn7_cn 的 check_speech_command 只认拼音;esp_mn_commands_add 的中文→拼音 g2p 路径被
+# CONFIG_SR_MN_EN_MULTINET7_QUANT gate 住,CN 模型下传中文会 invalid。
+# 勿开 EN_MULTINET7_QUANT——会拉入英文 mn7_en 模型,srmodels.bin 涨到 5.7MB,3MB model 分区放不下。
+# 用户照样说中文,模型内部匹配拼音,dispatch 里用拼音 strstr 匹配。

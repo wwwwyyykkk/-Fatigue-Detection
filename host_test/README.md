@@ -1,28 +1,23 @@
-# Host-side unit tests
+# Host-side tests
 
-This folder contains PC-side tests for pure logic that does not depend on
-Arduino, FreeRTOS, or hardware peripherals.
+These tests run on a PC and cover pure logic from `main/perclos.hpp`.
+They do not need ESP-IDF, a board, or a camera.
 
-The first module, `perclos_level()`, mirrors the thresholds in
-`drivesafe/config.h`:
+`host_test/mocks/esp_log.h` provides no-op logging macros so the header can be
+included without the ESP-IDF runtime.
 
-| Ratio | Level |
-|---|---|
-| `<= 0.15` | normal |
-| `<= 0.30` | mild |
-| `> 0.30` | severe |
-| outside `[0, 1]` | invalid (`-1`) |
-
-## Run locally
+## Run
 
 ```powershell
-cmake -S host_test -B host_test/build
-cmake --build host_test/build
-ctest --test-dir host_test/build --output-on-failure
+cmake -S host_test -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
-## Why this exists
+## Coverage
 
-The target firmware still talks to the camera, OLED, buzzer, and 4G module.
-Those parts are verified on hardware. This folder tests the pure decision
-logic on a PC so regressions are caught before flashing.
+- Empty / partially filled window
+- 15% and 30% fatigue boundaries
+- Sliding-window replacement
+- Weather-linked thresholds (clear / rain / fog)
+- Reset behavior

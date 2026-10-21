@@ -1,0 +1,9 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp-dl: ==3.2.0
+  espressif/human_face_detect: ==0.3.0
+  espressif/usb_host_uvc: ^2.4.1
+  espressif/usb_host_uac: ^1.5.0
+  lvgl/lvgl: "^9.2"
+  espressif/esp_lvgl_port: "^2"
+  espressif/esp-sr: ~2.3.0

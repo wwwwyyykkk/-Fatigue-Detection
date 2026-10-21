@@ -1,213 +1,268 @@
-# 驾盾 DriveSafe Guardian
+# 驾盾 FatigueGuard
 
-> 基于 ESP32-S3 的边缘 AI 驾驶员疲劳监测与安全预警系统
+> 基于 ESP32-S3 + USB UVC 的边缘 AI 驾驶员疲劳监测与安全预警系统
 
 [![CI](https://github.com/wwwwyyykkk/-Fatigue-Detection/actions/workflows/ci.yml/badge.svg)](https://github.com/wwwwyyykkk/-Fatigue-Detection/actions/workflows/ci.yml)
 
+> **版本说明**：当前 `main` 是完整的 **ESP-IDF + USB UVC** 版本。  
+> 早期 Arduino + OV5640 原型保留在 `legacy/arduino-ov5640` 分支，不在当前主线中。
+
 ## 项目简介
 
-驾盾面向车载安全场景，在 ESP32-S3 上完成摄像头采集、端侧 AI 推理、疲劳判定、酒精检测、GPS/4G 上报与本地报警的完整闭环。系统不依赖云端推理，在设备本地完成人脸验证与疲劳检测，降低延迟与隐私风险。
+驾盾面向车载安全场景，在 ESP32-S3 上运行完整的边缘 AI 推理链路：
 
-项目获 **2026 年全国大学生嵌入式芯片与系统设计竞赛（应用赛道）全国三等奖**。
+```text
+USB UVC 摄像头 → MJPEG 解码 → 人脸检测 → 眼睛 ROI → 眼部分类 → PERCLOS
+              → 疲劳等级 → TFT 显示 / 语音提醒 / 4G 上报 / Web 看板
+```
+
+系统不依赖云端推理，人脸检测、眼睛状态分类、PERCLOS 计算都在设备本地完成，降低延迟与隐私风险。项目获 **2026 年全国大学生嵌入式芯片与系统设计竞赛（应用赛道）全国三等奖**。
 
 ## 功能特性
 
-- **端侧 AI**：人脸验证 + 疲劳检测模型在 ESP32-S3 本地推理
-- **疲劳判定**：PERCLOS 滑动窗口 + 打哈欠统计 + 三级疲劳状态
-- **酒精检测**：MQ-3 传感器预热、阈值判断与报警
-- **五状态机**：`INIT / DRIVING / RESTING / UNKNOWN / FATIGUE`
-- **安全评分**：行程结束按疲劳、酒精、离岗、驾驶时长扣分
-- **本地交互**：SSD1306 OLED、行程/确认按键（蜂鸣器驱动可选，当前演示未接入）
-- **远程上报**：EG800K 4G/GPS，JSON 定时上报；3.5h 休息点提醒、4h 强制报警
-- **云端看板**：Web 页面展示状态、轨迹与行程报告
-- **工程化**：主机端单元测试 + GitHub Actions CI
+- **USB UVC 摄像头**：CAM12-720P-V2，MJPEG 1280×720，每 10 帧处理 1 帧
+- **人脸检测**：ESP-DL `HumanFaceDetect`（MSRMNP_S8_V1）
+- **眼睛状态分类**：MobileNetV2 0.35，96×96，FLOAT32，验证集准确率 84.6%
+- **PERCLOS 疲劳判定**：30 帧滑动窗口，三级疲劳状态
+- **人脸身份确认**：MobileFaceNet 112×112，128 维特征，NVS 注册/识别
+- **TFT 仪表盘**：LVGL 9 + ST7789 240×320，显示 PERCLOS 仪表、趋势曲线、驾驶信息
+- **语音交互**：ESP-SR 离线语音识别 + MAX98357 I2S 语音播报
+- **4G/GPS 与云端**：EG800K 模组，MQTT 上报，Flask + 高德地图 Web 看板
+- **多板协同**：主控板 ↔ ESP-NOW ↔ VirtualGPS 板
+- **酒精检测**：MQ-3 传感器（VirtualGPS 板）
+- **工程质量**：主机端 C++ 单元测试 + GitHub Actions CI
 
 ## 系统架构
 
+![系统架构](docs/images/多层系统架构示意图.png)
+
 ```mermaid
 flowchart LR
-    CAM[OV5640 摄像头] --> ESP[ESP32-S3]
-    MQ3[MQ-3 酒精传感器] --> ESP
-    BTN[行程/确认按键] --> ESP
-    ESP --> OLED[SSD1306 OLED]
-    ESP --> BUZZ[蜂鸣器（可选）]
-    ESP --> AI[端侧 AI 推理]
-    ESP --> EG[EG800K 4G/GPS]
-    EG --> CLOUD[云端 / Web 看板]
+    CAM[USB UVC 摄像头<br/>1280x720 MJPEG] --> JPEG[esp_jpeg 解码]
+    JPEG --> FD[ESP-DL 人脸检测]
+    FD --> ROI[眼睛 ROI 裁剪<br/>96x96 灰度]
+    ROI --> CLS[TFLite Micro 眼部分类<br/>open / closed]
+    CLS --> PER[PERCLOS 30 帧窗口]
+    PER --> LVL[疲劳等级 NORMAL / MILD / SEVERE]
+    LVL --> UI[LVGL TFT 仪表盘]
+    LVL --> VOICE[ESP-SR / 语音播报]
+    LVL --> EG[EG800K 4G/GPS]
+    EG --> CLOUD[云端 / Flask Web 看板]
+    FD --> FR[人脸识别 MobileFaceNet<br/>启动时一次]
+    FR --> NVS[(NVS 人脸库)]
+    VGPS[VirtualGPS 板<br/>ESP-NOW] <--> M[主控板]
 ```
 
-数据流：
-
-```text
-图像采集 → 灰度/归一化 → 端侧推理 → EAR / MAR / 人脸置信度
-        → PERCLOS + 打哈欠 + 五状态机 → OLED（蜂鸣器可选）
-        → 4G JSON 上报 → Web 看板
-```
+全链路数据流见 [`docs/images/全链路数据流图.png`](docs/images/全链路数据流图.png)，详细流程见 [`docs/system_workflow.md`](docs/system_workflow.md)。
 
 ## 硬件清单
 
 | 模块 | 型号 / 说明 |
 |---|---|
-| 主控 | ESP32-S3-DevKitC-1，16MB Flash，OPI PSRAM |
-| 摄像头 | OV5640（DVP） |
-| 显示 | SSD1306 OLED（I2C） |
-| 酒精 | MQ-3 模拟传感器（ADC） |
-| 通信 | EG800K 4G/GPS 模组（UART） |
-| 交互 | 行程按键、确认按键；蜂鸣器（可选，代码已支持，当前演示未接入） |
+| 主控 | ESP32-S3N32R16（32MB Flash，16MB PSRAM） |
+| 摄像头 | CAM12-720P-V2，USB UVC，MJPEG 720p |
+| 显示 | ST7789 240×320，SPI |
+| 语音识别 | USB UAC 麦克风 + ESP-SR |
+| 语音播报 | MAX98357 I2S 功放 + 喇叭 |
+| 4G/GPS | EG800K 模组，UART |
+| 酒精检测 | MQ-3 模拟传感器（VirtualGPS 板） |
+| 副板 | VirtualGPS：ESP32-S3 + SYN6288 TTS + ESP-SR + OLED |
 
-> 当前演示未接入蜂鸣器。如需声音报警，可接 GPIO38 并保留现有的 `buzzer.h` 驱动。
+USB 摄像头接线、USB PHY 冲突与外部 UART 调试说明见 [`docs/USB_CAMERA_WIRING.md`](docs/USB_CAMERA_WIRING.md)。
 
-详细引脚接线见 [`drivesafe/README.md`](drivesafe/README.md)。
+> **注意**：USB UVC 使用 USB-OTG（GPIO19/20），运行时板载 USB-Serial-JTAG 会失效，需要通过 GPIO43/44 外接 USB 转 UART 查看日志。
 
 ## 软件结构
 
 ```text
 Fatigue-Detection/
-├── drivesafe/                 # 主固件
-│   ├── drivesafe.ino          # 主入口、摄像头、推理与任务
-│   ├── config.h               # 引脚、阈值、参数
-│   ├── state_machine.h/.cpp   # 五状态机、PERCLOS、打哈欠、评分
-│   ├── oled_display.h         # OLED 界面
-│   ├── buzzer.h               # 蜂鸣器 PWM
-│   ├── mq3_alcohol.h          # 酒精检测
-│   ├── eg800k_gps.h           # 4G/GPS 驱动
-│   ├── net_report.h           # 网络上报任务
-│   ├── web_dashboard.html     # 云端 Web 看板
-│   └── README.md              # 部署、接线、模型导入说明
-├── fatigue_test_1/            # 疲劳检测验证 sketch
-├── locate_face/               # 人脸定位验证 sketch
-├── ov5640_test/               # 摄像头 bring-up sketch
-├── host_test/                 # PC 端单元测试
-│   ├── src/perclos.c/.h
-│   ├── test/test_perclos.c
-│   └── CMakeLists.txt
-├── .github/workflows/ci.yml   # GitHub Actions CI
-└── README.md
+├── main/                       # ESP-IDF 主组件
+│   ├── main.cpp                # UVC、人脸检测、眼部分类、PERCLOS、任务调度
+│   ├── perclos.hpp             # PERCLOS 计算器 + 疲劳等级 + 天气联动阈值
+│   ├── eye_roi.hpp             # 人脸框 → 眼睛 ROI 裁剪
+│   ├── mouth_roi.hpp           # 嘴部 ROI（扩展用）
+│   ├── lvgl_ui.cpp             # LVGL 界面
+│   ├── ScreenDriver.cpp        # ST7789 驱动
+│   ├── gps_uart.cpp            # EG800K GPS/4G 串口
+│   ├── esp_sr_task.cpp         # ESP-SR 语音识别
+│   ├── mic_test.cpp            # UAC 麦克风测试
+│   └── voice/                  # 提示音 WAV
+├── components/
+│   ├── eye_classifier/         # 眼部分类（TFLite Micro + MobileNetV2）
+│   ├── face_recognizer/        # 人脸识别（MobileFaceNet + NVS）
+│   ├── cloud_face/             # 云端人脸相关
+│   ├── esp_now_link/           # 双板 ESP-NOW 通信
+│   └── voice_prompter/         # I2S 语音播报
+├── virtualgps/                 # VirtualGPS 副板固件
+├── tools/                      # 数据准备、训练、TFLite 转换、分析脚本
+├── docs/                       # 系统流程、接线、PERCLOS、显示文档
+├── host_test/                  # PC 端 C++ 单元测试
+├── CMakeLists.txt
+├── partitions.csv
+├── sdkconfig.defaults
+└── .github/workflows/ci.yml
 ```
 
-## AI 模型
+## AI 模型与部署
 
-- **训练平台**：Edge Impulse
-- **模型一**：人脸识别（`authorized` / `unknown`）
-- **模型二**：疲劳检测（`face_conf` / `EAR` / `MAR`）
-- **部署方式**：导出 Arduino 库，在 ESP32-S3 上本地推理
-- **内存策略**：帧缓冲使用 PSRAM；模型内存由 Edge Impulse 推理库管理。两个模型串行加载，避免内部 RAM 不足
+### 眼部分类模型
 
-> 由于模型体积与授权原因，仓库不包含 Edge Impulse 导出的模型库。请按 [`drivesafe/README.md`](drivesafe/README.md) 自行训练/导出并导入。
+- **训练**：Edge Impulse 自定义训练脚本
+- **数据**：530 张眼部灰度图（248 open + 282 closed）+ 强数据增强
+- **模型**：MobileNetV2 0.35，96×96 单通道
+- **导出**：FLOAT32 TFLite → C 字节数组嵌入固件
+- **验证集准确率**：84.6%
+- **Tensor Arena**：685 KB，放在 PSRAM
+- **推理速度**：约 1.9 s/帧（FLOAT32 reference ops）
 
-## 疲劳判定
+### 踩过的坑
 
-| 指标 | 规则 |
-|---|---|
-| PERCLOS | 60s 滑动窗口（300 帧 @5fps） |
-| 正常 | PERCLOS ≤ 15% |
-| 轻度 | 15% < PERCLOS ≤ 30% |
-| 严重 | PERCLOS > 30% |
-| 打哈欠 | MAR 超阈值并持续 1.5s，计入 10 分钟窗口 |
+| 问题 | 原因 | 解决 |
+|---|---|---|
+| INT8 输出恒为 `[127, -128]` | ESP-NN 在 ESP32-S3 上的量化内核饱和（汇编与 ANSI C 路径均存在） | 改用 FLOAT32，禁用 ESP-NN |
+| 训练准确率只有 57% | Edge Impulse 输入为 `[0,1]`，MobileNetV2 预训练权重期望 `[-1,1]` | 训练脚本加 `Rescaling(2.0, -1)` |
+| 输出标签对调 | 模型索引 `0=closed, 1=open` 与代码映射相反 | 修正 `eye_classifier_infer.cpp` 映射 |
+| Tensor Arena 被 USB DMA 破坏 | 推理期间 USB DMA 写内部 SRAM | Arena 迁移到 PSRAM |
+| ROI 切到鼻子 | 眼睛 ROI 参数偏大 | 调整到 `top=0.22, bottom=0.48, left=0.05, right=0.60` |
 
-系统状态：
+### 人脸识别
 
-```text
-INIT → DRIVING ⇄ RESTING
-         ↓
-      UNKNOWN / FATIGUE
-```
+- **模型**：MobileFaceNet，112×112 RGB，128 维特征
+- **注册**：特征向量存入 NVS `face_db`
+- **识别**：余弦相似度，阈值 0.30
+- **时机**：启动后首次检测到人脸时运行一次，避免影响后续 PERCLOS 流水线
+- **开销**：Tensor Arena 约 3 MB（PSRAM），推理约 12.6 s（reference ops）
 
-- **FATIGUE**：疲劳或酒精报警，需睁眼恢复 + 按键确认
-- **UNKNOWN**：车辆移动但未检测到人脸
-- **RESTING**：停车休息
-- 行程结束输出 0~100 安全评分
+### 人脸检测
+
+- ESP-DL `HumanFaceDetect`，模型 `MSRMNP_S8_V1`
+- 模型放在 Flash RODATA，避免 USB DMA 与 PSRAM 冲突
+
+## PERCLOS 与疲劳判定
+
+![滑动窗口](docs/images/滑动窗口算法.png)
+
+- 滑动窗口：**30 帧**（约 6 s @ 5 fps 处理速率）
+- 计算：`PERCLOS = 闭眼帧数 / 有效帧数 × 100%`
+- 疲劳等级：
+  - `PERCLOS ≤ 15%`：NORMAL
+  - `15% < PERCLOS ≤ 30%`：MILD
+  - `PERCLOS > 30%`：SEVERE
+- 天气联动阈值：
+  - 晴/多云：15% / 30%
+  - 雨/雪：12% / 25%
+  - 雾/霾：10% / 20%
+- 驾驶时长提醒阈值也会随天气风险收紧（210 / 180 / 150 分钟）
+
+实现见 [`main/perclos.hpp`](main/perclos.hpp)，设计说明见 [`docs/PERCLOS_implementation_notes.md`](docs/PERCLOS_implementation_notes.md)。
+
+## 显示、语音与多板协同
+
+- **TFT 显示**：Idle / Identifying / Monitoring / Rest 四页；Monitoring 页包含 PERCLOS 弧形仪表、120 点趋势曲线、GPS/速度/驾驶时长
+- **语音识别**：ESP-SR 离线命令词，UAC 麦克风采集
+- **语音播报**：MAX98357 I2S 功放，提示音由 WAV 转 C 数组
+- **ESP-NOW**：主控板与 VirtualGPS 板通信
+- **4G/GPS**：EG800K 串口上报，云端 Flask 页面展示轨迹/状态/天气
+- **天气联动**：Web 端获取天气风险，回传后自动调整疲劳阈值
 
 ## 构建与运行
 
-### 固件
+### 环境
 
-Arduino IDE 配置：
+- ESP-IDF **v5.5.x**
+- 目标芯片：`esp32s3`
+- Python 3.11（ESP-IDF 自带环境即可）
+- 依赖组件由 `idf_component.yml` 管理，首次构建会自动下载到 `managed_components/`（不提交到仓库）
 
-| 选项 | 值 |
-|---|---|
-| Board | ESP32S3 Dev Module |
-| PSRAM | OPI PSRAM |
-| Flash Size | 16MB |
-| Partition Scheme | Huge APP (3MB No OTA) |
-| CPU Frequency | 240MHz |
+### 本地配置（不要提交真实密钥）
 
-依赖库：
+首次构建前，请把仓库中的占位符替换成本机配置：
 
-- Adafruit SSD1306
-- Adafruit GFX Library
-- esp32-camera
-- Edge Impulse 导出的 `face_recognition_inferencing` / `fatigue_detection_inferencing`
+- `main/main.cpp`：`BAIDU_API_KEY`、`BAIDU_SECRET_KEY`
+- `main/main.cpp`：`WIFI_SSID`、`WIFI_PASSWORD`
+- `virtualgps/main/config.h`：`WIFI_SSID`、`WIFI_PASSWORD`
 
-配置 `drivesafe/config.h`：
+> 这些值不要提交到 Git。建议在本地修改后使用 `git update-index --skip-worktree`，或者改造成 Kconfig/本地 `secrets.h` 方案。
 
-```cpp
-#define AMAP_KEY    "你的高德 API Key"
-#define SERVER_URL  "http://你的服务器地址/api/report"
-```
-
-然后打开 `drivesafe/drivesafe.ino` 编译上传。
-
-### 主机端单元测试
+### 编译
 
 ```powershell
-cmake -S host_test -B host_test/build
-cmake --build host_test/build
-ctest --test-dir host_test/build --output-on-failure
+cd Fatigue-Detection
+idf.py set-target esp32s3
+idf.py build
 ```
 
-当前覆盖 `perclos_level()` 的边界与非法输入；后续计划扩展到状态机、协议解析、CRC 校验。
+### 烧录与监视
 
-### CI
+```powershell
+idf.py -p COMx flash monitor
+```
 
-GitHub Actions 在每次 push / PR 时自动编译并运行主机端测试：
+> 由于 USB-OTG 会接管内部 PHY，运行时板载 USB 串口可能失效。建议按 [`docs/USB_CAMERA_WIRING.md`](docs/USB_CAMERA_WIRING.md) 使用 GPIO43/44 外接 USB 转 UART 查看日志。
 
-```yaml
+### 关键配置
+
+- `sdkconfig.defaults`：32MB Flash、OPI PSRAM、USB Host、ESP-DL、LVGL、ESP-SR、WiFi 内存裁剪
+- `partitions.csv`：自定义分区表
+- `idf_component.yml`：`usb_host_uvc`、`usb_host_uac`、`esp-dl`、`human_face_detect`、`esp-sr`、LVGL 等
+
+## 主机端单元测试
+
+`host_test/` 在 PC 上测试 `perclos.hpp` 的纯逻辑，不依赖 ESP-IDF 或硬件：
+
+```powershell
 cmake -S host_test -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-## 演示流程
+覆盖内容：
 
-1. 上电，等待 MQ-3 预热（30 秒）和酒驾预检
-2. 面向摄像头完成人脸验证
-3. 按行程键开始行程
-4. 持续闭眼/打哈欠触发 MILD / SEVERE 疲劳报警
-5. 睁眼恢复 30 秒并按确认键解除报警
-6. 车辆移动但检测不到人脸触发 UNKNOWN 离岗报警
-7. 结束行程查看安全评分与云端记录
+- 空窗口 / 未填满窗口
+- 15% 与 30% 边界
+- 滑动窗口替换旧帧
+- 天气联动阈值（晴 / 雨 / 雾）
+- reset 行为
+
+GitHub Actions 在每次 push / PR 时自动运行这些测试。
 
 ## 项目结果
 
-- 眼部疲劳分类模型验证集准确率约 **84.6%**（开发阶段）
-- 端到端链路（采集 → 推理 → 报警 → 4G 上报）完成 **48 小时连续运行测试**
-- 获全国大学生嵌入式芯片与系统设计竞赛（应用赛道）全国三等奖
+- 眼部分类模型验证集准确率约 **84.6%**
+- 端到端链路（USB 采集 → 人脸检测 → 眼部分类 → PERCLOS → 显示/上报）完成 **48 小时连续运行测试**
+- 获 **全国大学生嵌入式芯片与系统设计竞赛（应用赛道）全国三等奖**
+- 完成主控板 + VirtualGPS 副板 + EG800K 4G + Flask Web 看板的联调
 
-## 项目亮点
+## 设计文档
 
-- 在无 GPU 的 ESP32-S3 上完成端侧 AI 推理与多任务调度
-- 自行采集/标注眼部数据，训练并部署疲劳分类模型
-- 处理 INT8 量化输出饱和、PSRAM/内部 RAM 冲突等端侧部署问题
-- FreeRTOS 多任务：主检测、酒精采集、网络上报
-- 完整闭环：本地报警 + 4G 上报 + Web 看板
-- 引入主机端单元测试与 GitHub Actions CI，主分支保持可验证
+- [系统完整工作流程](docs/system_workflow.md)
+- [USB 摄像头接线与调试](docs/USB_CAMERA_WIRING.md)
+- [PERCLOS 实现说明](docs/PERCLOS_implementation_notes.md)
+- [TFT 显示说明](docs/README-DISPLAY.md)
+- [VirtualGPS Mock 方案](docs/mock-gps-plan.md)
+- [答辩流程与讲稿](docs/答辩流程与讲稿.md)
 
 ## 已知限制 / Roadmap
 
-- [ ] 两个 Edge Impulse 模型目前串行加载，切换需重新编译；计划改为分区动态加载/OTA
-- [ ] 主机端测试目前只覆盖 PERCLOS，计划补充状态机、协议解析、CRC
+- [ ] FLOAT32 推理约 1.9 s/帧；后续可评估 INT8 修复或更轻量模型
+- [ ] 人脸识别启动时约 12.6 s，可改为后台任务/更轻量模型
+- [ ] USB-OTG 与板载 USB-Serial-JTAG 共用 PHY，调试需外接 UART
+- [ ] WiFi + USB UVC + TFLite 内存紧张，后续继续优化 buffer/任务栈
 - [ ] 增加固件编译 CI（ESP-IDF Docker）
-- [ ] 增加硬件在环测试与长时间稳定性测试脚本
-- [ ] 增加演示视频与截图
+- [ ] 增加硬件在环测试与更多主机端测试
+- [ ] 补充设备实物图与演示视频
 
-## 致谢
+## 旧版说明
 
-- Edge Impulse：模型训练与导出
-- Espressif：ESP32-S3 / esp32-camera
-- Adafruit：SSD1306 / GFX
-- 全国大学生嵌入式芯片与系统设计竞赛
+早期 Arduino + OV5640 DVP 原型（`drivesafe/`、`ov5640_test/` 等）保留在：
+
+```text
+legacy/arduino-ov5640
+```
+
+当前 `main` 以 ESP-IDF + USB UVC 完整版为准。
 
 ## 作者
 
-吴煜坤 · 福建理工大学 电子信息工程
+吴煜坤 · 福建理工大学 电子信息工程  
+2026 年全国大学生嵌入式芯片与系统设计竞赛（应用赛道）全国三等奖
