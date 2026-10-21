@@ -1,0 +1,30 @@
+# main 组件 CMake 配置
+idf_component_register(
+    SRCS
+        "main.c"
+        "gps_state.c"
+        "buttons_gpio.c"
+        "uart_protocol.c"
+        "alcohol_sensor.c"
+        "oled_display.c"
+        "syn6288.c"
+        "syn6288_test.c"
+        "app_priv.c"
+        "esp_sr_task.cpp"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        driver
+        esp_timer
+        freertos
+        esp_wifi
+        esp_event
+        esp_netif
+        nvs_flash
+        esp_now_link
+        esp_rainmaker
+        rmaker_app_network
+        rmaker_app_insights
+        esp-sr
+        spiffs
+)

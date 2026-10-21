@@ -1,0 +1,9 @@
+# VirtualGPS Board — 8MB 分区表 (RainMaker + ESP-SR, 去掉 OTA)
+# 2026-08-06: 去掉 otadata/ota_0/ota_1，加 model(spiffs) 3MB 存 ESP-SR 模型
+# 固件 3MB + 模型 3MB + nvs/phy ≈ 6.2MB < 8MB
+# Name,   Type, SubType, Offset,  Size,    Flags
+nvs,      data, nvs,     0x10000, 0x4000,
+phy_init, data, phy,     0x16000, 0x1000,
+fctry,    data, nvs,     0x17000, 0x6000,
+factory,  app,  factory, 0x20000, 0x300000,
+model,    data, spiffs,  0x320000,0x300000,
