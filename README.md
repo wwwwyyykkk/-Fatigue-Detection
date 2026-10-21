@@ -17,7 +17,7 @@
 - **酒精检测**：MQ-3 传感器预热、阈值判断与报警
 - **五状态机**：`INIT / DRIVING / RESTING / UNKNOWN / FATIGUE`
 - **安全评分**：行程结束按疲劳、酒精、离岗、驾驶时长扣分
-- **本地交互**：SSD1306 OLED、蜂鸣器、行程/确认按键
+- **本地交互**：SSD1306 OLED、行程/确认按键（蜂鸣器驱动可选，当前演示未接入）
 - **远程上报**：EG800K 4G/GPS，JSON 定时上报；3.5h 休息点提醒、4h 强制报警
 - **云端看板**：Web 页面展示状态、轨迹与行程报告
 - **工程化**：主机端单元测试 + GitHub Actions CI
@@ -30,7 +30,7 @@ flowchart LR
     MQ3[MQ-3 酒精传感器] --> ESP
     BTN[行程/确认按键] --> ESP
     ESP --> OLED[SSD1306 OLED]
-    ESP --> BUZZ[蜂鸣器]
+    ESP --> BUZZ[蜂鸣器（可选）]
     ESP --> AI[端侧 AI 推理]
     ESP --> EG[EG800K 4G/GPS]
     EG --> CLOUD[云端 / Web 看板]
@@ -53,7 +53,9 @@ flowchart LR
 | 显示 | SSD1306 OLED（I2C） |
 | 酒精 | MQ-3 模拟传感器（ADC） |
 | 通信 | EG800K 4G/GPS 模组（UART） |
-| 交互 | 蜂鸣器、行程按键、确认按键 |
+| 交互 | 行程按键、确认按键；蜂鸣器（可选，代码已支持，当前演示未接入） |
+
+> 当前演示未接入蜂鸣器。如需声音报警，可接 GPIO38 并保留现有的 `buzzer.h` 驱动。
 
 详细引脚接线见 [`drivesafe/README.md`](drivesafe/README.md)。
 
@@ -89,7 +91,7 @@ Fatigue-Detection/
 - **模型一**：人脸识别（`authorized` / `unknown`）
 - **模型二**：疲劳检测（`face_conf` / `EAR` / `MAR`）
 - **部署方式**：导出 Arduino 库，在 ESP32-S3 上本地推理
-- **内存策略**：帧缓冲与 Tensor Arena 使用 PSRAM；两个模型串行加载，避免内部 RAM 不足
+- **内存策略**：帧缓冲使用 PSRAM；模型内存由 Edge Impulse 推理库管理。两个模型串行加载，避免内部 RAM 不足
 
 > 由于模型体积与授权原因，仓库不包含 Edge Impulse 导出的模型库。请按 [`drivesafe/README.md`](drivesafe/README.md) 自行训练/导出并导入。
 
@@ -187,7 +189,7 @@ ctest --test-dir build --output-on-failure
 - 在无 GPU 的 ESP32-S3 上完成端侧 AI 推理与多任务调度
 - 自行采集/标注眼部数据，训练并部署疲劳分类模型
 - 处理 INT8 量化输出饱和、PSRAM/内部 RAM 冲突等端侧部署问题
-- FreeRTOS 任务解耦采集、推理、显示与网络上报
+- FreeRTOS 多任务：主检测、酒精采集、网络上报
 - 完整闭环：本地报警 + 4G 上报 + Web 看板
 - 引入主机端单元测试与 GitHub Actions CI，主分支保持可验证
 

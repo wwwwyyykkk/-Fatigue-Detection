@@ -72,7 +72,7 @@ drivesafe/
 | OV5640 D0-D7 | GPIO11,9,8,10,12,18,17,16 |
 | OLED SDA | GPIO2（与摄像头共用 I2C） |
 | OLED SCL | GPIO4（与摄像头共用 I2C） |
-| 蜂鸣器 | GPIO38 |
+| 蜂鸣器（可选，当前演示未接入） | GPIO38 |
 | MQ-3 AO | GPIO39 |
 | EG800K TX | GPIO43 |
 | EG800K RX | GPIO44 |

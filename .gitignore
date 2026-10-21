@@ -22,3 +22,6 @@ Thumbs.db
 *.epro
 *.zip
 *.rar
+
+# Unrelated lab notes kept locally, not part of this project
+Linux实验三.md
